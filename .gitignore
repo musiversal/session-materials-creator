@@ -2,6 +2,8 @@ venv_crema/
 venv_madmom/
 venv_demucs/
 venv_allin1/
+venv_stabilizer/
+.run-logs/
 __pycache__/
 *.pyc
 *.wav

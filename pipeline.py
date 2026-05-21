@@ -322,7 +322,10 @@ def main() -> None:
     allin1_runner   = os.path.join(script_dir, "run_allin1.py")
     stem_splitter   = os.path.join(script_dir, "stem_splitter.py")
 
-    for venv, name in [(crema_python, "venv_crema"), (demucs_python, "venv_demucs"), (allin1_python, "venv_allin1")]:
+    required_venvs = [(crema_python, "venv_crema"), (demucs_python, "venv_demucs")]
+    if not args.skip_sections:
+        required_venvs.append((allin1_python, "venv_allin1"))
+    for venv, name in required_venvs:
         if not os.path.isfile(venv):
             sys.exit(f"{name} not found at {venv}\nRun  bash setup.sh  first.")
 
