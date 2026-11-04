@@ -34,7 +34,7 @@ if [[ "${1:-}" == "url" ]]; then
         echo "No tunnel log found at $TUNNEL_LOG — is the service running?" >&2
         exit 1
     fi
-    URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | tail -1)
+    URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | grep -v 'api\.trycloudflare\.com' | tail -1)
     if [[ -z "$URL" ]]; then
         echo "No tunnel URL in $TUNNEL_LOG yet — tunnel may still be starting." >&2
         exit 1
@@ -83,13 +83,16 @@ if [[ "${1:-}" == "tunnel" ]]; then
     echo "✓  Web UI ready."
 
     echo "▶  Starting Cloudflare quick tunnel …"
-    "$CLOUDFLARED" tunnel --no-autoupdate --url "http://localhost:$PORT" >"$TUNNEL_LOG" 2>&1 &
+    # --config /dev/null: prevent cloudflared from auto-loading ~/.cloudflared/config.yml
+    # (the named AreUWorking tunnel's ingress rules), which otherwise hijacks this quick
+    # tunnel and 404s every request without ever reaching localhost:$PORT.
+    "$CLOUDFLARED" --config /dev/null tunnel --no-autoupdate --url "http://localhost:$PORT" >"$TUNNEL_LOG" 2>&1 &
     TUNNEL_PID=$!
 
     # Cloudflared writes the URL to its log after a few seconds
     PUBLIC_URL=""
     for _ in $(seq 1 60); do
-        PUBLIC_URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -1 || true)
+        PUBLIC_URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | grep -v 'api\.trycloudflare\.com' | head -1 || true)
         [[ -n "$PUBLIC_URL" ]] && break
         sleep 0.5
     done
@@ -124,7 +127,7 @@ if [[ "${1:-}" == "tunnel" ]]; then
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
 
-    wait
+    wait -n
 fi
 
 DEFAULT_ARGS=()
