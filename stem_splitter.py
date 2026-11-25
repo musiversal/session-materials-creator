@@ -2,13 +2,13 @@
 """
 stem_splitter.py  —  Split an audio file into stems using Demucs.
 
-Default model: htdemucs_6s  →  6 stems: vocals, drums, bass, guitar, piano, other
-Fast model:    htdemucs     →  4 stems: vocals, drums, bass, other
+6-stem model:  htdemucs_6s  →  6 stems: vocals, drums, bass, guitar, piano, other
+Default model: htdemucs     →  4 stems: vocals, drums, bass, other
 
 Run with the demucs venv:
-    ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav
-    ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav --model htdemucs
-    ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav --stems vocals,drums
+    ./venv_demucs/bin/python stem_splitter.py -i song.wav
+    ./venv_demucs/bin/python stem_splitter.py -i song.wav --model htdemucs
+    ./venv_demucs/bin/python stem_splitter.py -i song.wav --stems vocals,drums
 
 On first run, Demucs downloads the model weights (~80–320 MB, cached afterwards).
 """
@@ -148,8 +148,8 @@ def split(
     output_dir: str,
     model: str,
     wanted_stems: set[str] | None,
-    demucs_shifts: int = 1,
-    demucs_overlap: float = 0.25,
+    demucs_shifts: int = 0,
+    demucs_overlap: float = 0.0,
     demucs_jobs: int = 0,
     demucs_segment: int = 0,
     demucs_device: str = "auto",
@@ -173,16 +173,22 @@ def split(
         ]
         # Demucs CLI pass-through. Only push non-default values so the command
         # line stays readable in the logs.
-        if demucs_shifts and demucs_shifts != 1:
+        if demucs_shifts is not None and demucs_shifts != 1:
             cmd += ["--shifts", str(int(demucs_shifts))]
-        if demucs_overlap and demucs_overlap != 0.25:
+        if demucs_overlap is not None and demucs_overlap != 0.25:
             cmd += ["--overlap", str(float(demucs_overlap))]
         if demucs_jobs and demucs_jobs > 0:
             cmd += ["--jobs", str(int(demucs_jobs))]
         if demucs_segment and demucs_segment > 0:
             cmd += ["--segment", str(int(demucs_segment))]
-        if demucs_device and demucs_device != "auto":
-            cmd += ["-d", demucs_device]
+        # Demucs's own "auto" only picks CUDA, else CPU — it never uses Apple's
+        # GPU. Resolve auto here: cuda > mps > cpu (MPS is ~3.6x faster than
+        # CPU on an M-series Mac: 13.5 s vs 48.7 s for a 2:07 song).
+        if not demucs_device or demucs_device == "auto":
+            import torch
+            demucs_device = ("cuda" if torch.cuda.is_available()
+                             else "mps" if torch.backends.mps.is_available() else "cpu")
+        cmd += ["-d", demucs_device]
         if demucs_int24:
             cmd += ["--int24"]
         if demucs_mp3:
@@ -375,16 +381,16 @@ def parse_args() -> argparse.Namespace:
 Models:
 {"".join(f"  {k:<16} {v}{chr(10)}" for k, v in MODELS.items())}
 Examples:
-  ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav
-  ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav --model htdemucs
-  ./venv_demucs/bin/python3.11 stem_splitter.py -i song.wav --stems vocals,bass
+  ./venv_demucs/bin/python stem_splitter.py -i song.wav
+  ./venv_demucs/bin/python stem_splitter.py -i song.wav --model htdemucs
+  ./venv_demucs/bin/python stem_splitter.py -i song.wav --stems vocals,bass
         """,
     )
     p.add_argument("-i", "--input",      required=True, help="Input audio file")
     p.add_argument("-o", "--output-dir", default=None,  dest="output_dir",
                    help="Output folder (default: <input>_stems/)")
-    p.add_argument("--model",  default="htdemucs_6s", choices=list(MODELS),
-                   help="Demucs model to use (default: htdemucs_6s)")
+    p.add_argument("--model",  default="htdemucs", choices=list(MODELS),
+                   help="Demucs model to use (default: htdemucs)")
     p.add_argument("--stems",  default=None,
                    help="Comma-separated stems to keep e.g. 'vocals,drums' (default: all)")
     p.add_argument("--progress-json", action="store_true", dest="progress_json",
@@ -395,11 +401,11 @@ Examples:
                    help="Output path for the backing track WAV")
     # Demucs CLI pass-through
     dem = p.add_argument_group("Demucs (library knobs)")
-    dem.add_argument("--demucs-shifts",  type=int,   default=1,    dest="demucs_shifts",
+    dem.add_argument("--demucs-shifts",  type=int,   default=0,    dest="demucs_shifts",
                      help="Number of random shifts for equivariant stabilisation. Higher = "
-                          "better separation but proportionally slower (default: 1)")
-    dem.add_argument("--demucs-overlap", type=float, default=0.25, dest="demucs_overlap",
-                     help="Overlap between processing chunks, 0.0–0.99 (default: 0.25)")
+                          "better separation but proportionally slower (default: 0 = fastest; demucs default 1)")
+    dem.add_argument("--demucs-overlap", type=float, default=0.0, dest="demucs_overlap",
+                     help="Overlap between processing chunks, 0.0–0.99 (default: 0 = fastest; demucs default 0.25)")
     dem.add_argument("--demucs-jobs",    type=int,   default=0,    dest="demucs_jobs",
                      help="Parallel worker jobs. 0 = let demucs decide (default: 0)")
     dem.add_argument("--demucs-segment", type=int,   default=0,    dest="demucs_segment",
